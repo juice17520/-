@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>旅遊規劃器 - 終極修復版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { --brand-green: #82ba8d; }
+        .bg-brand { background-color: var(--brand-green); }
+        .text-brand { color: var(--brand-green); }
+        .border-brand { border-color: var(--brand-green); }
+        .timeline-path { position: absolute; left: 23px; top: 0; bottom: 0; width: 2px; background: #e2e8f0; z-index: 0; }
+        .event-card { transition: all 0.2s; cursor: pointer; user-select: none; }
+        .event-card:active { transform: scale(0.98); background-color: #f0f7f1; }
+    </style>
+</head>
+<body class="bg-gray-50 text-slate-800">
+
+    <header class="bg-brand text-white p-6 shadow-xl">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <h1 class="text-2xl font-bold tracking-wider">🌿 TRAVEL PLANNER</h1>
+            <div class="flex gap-2 items-end">
+                <div>
+                    <span class="text-[10px] block opacity-80 font-bold uppercase">Start</span>
+                    <input type="date" id="startDate" class="text-slate-900 p-1 rounded border-none shadow-inner text-sm outline-none">
+                </div>
+                <div>
+                    <span class="text-[10px] block opacity-80 font-bold uppercase">End</span>
+                    <input type="date" id="endDate" class="text-slate-900 p-1 rounded border-none shadow-inner text-sm outline-none">
+                </div>
+                <button onclick="initTrip()" class="bg-white text-brand px-4 py-1.5 rounded font-bold hover:bg-gray-100 transition shadow-md text-sm">生成天數</button>
+                <button onclick="localStorage.clear(); location.reload();" class="bg-red-500 text-white px-2 py-1.5 rounded text-[10px] hover:bg-red-600 transition">重置數據</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-6 p-6">
+        <div id="dayTabs" class="space-y-2">
+            </div>
+
+        <div class="md:col-span-3">
+            <div id="mainEditor" class="hidden">
+                <div class="bg-white p-6 rounded-xl shadow-sm mb-6 border-t-4 border-brand">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 id="currentDayTitle" class="text-xl font-bold text-gray-700">請選取日期</h2>
+                        <span class="text-[10px] text-brand bg-green-50 px-2 py-1 rounded font-bold border border-green-100 italic">長按卡片刪除行程</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-6 gap-3 bg-gray-50 p-4 rounded-lg border border-gray-100 shadow-inner">
+                        <div class="md:col-span-1"><label class="text-[10px] font-bold text-gray-400">時間</label><input type="time" id="itemTime" class="w-full p-2 border rounded text-sm"></div>
+                        <div class="md:col-span-1"><label class="text-[10px] font-bold text-gray-400">類型</label><select id="itemType" class="w-full p-2 border rounded text-sm"><option>景點</option><option>美食</option><option>交通</option><option>飯店</option></select></div>
+                        <div class="md:col-span-2"><label class="text-[10px] font-bold text-gray-400">地點</label><input type="text" id="itemTitle" placeholder="要去哪？" class="w-full p-2 border rounded text-sm"></div>
+                        <div class="md:col-span-2"><label class="text-[10px] font-bold text-gray-400">備註</label><div class="flex gap-2"><input type="text" id="itemNote" placeholder="選填" class="w-full p-2 border rounded text-sm"><button onclick="addItem()" class="bg-brand text-white px-4 py-2 rounded font-bold text-sm shadow-md">新增</button></div></div>
+                    </div>
+                </div>
+
+                <div class="relative min-h-[400px] bg-white rounded-xl shadow-sm p-8">
+                    <div class="timeline-path"></div>
+                    <div id="dayContent" class="space-y-8 relative z-10"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+      // --- 1. 資料結構與初始化 ---
+// db 格式：{ "計畫名稱": { start: "", end: "", data: { "日期": [] } } }
+let db = JSON.parse(localStorage.getItem('TRAVEL_MASTER_DB')) || {};
+let currentTripId = localStorage.getItem('CURRENT_TRIP_ID') || "";
+let currentActiveDate = null;
+let pressTimer;
+
+// 自動初始化：如果完全沒資料，幫用戶建一個預設的
+if (Object.keys(db).length === 0) {
+    db["預設行程"] = { start: "", end: "", data: {} };
+    currentTripId = "預設行程";
+}
+
+// 頁面載入後立即執行 UI 更新
+window.onload = function() {
+    updateTripSelector();
+    loadTripData();
+};
+
+// --- 2. 儲存與讀取 ---
+function save() {
+    localStorage.setItem('TRAVEL_MASTER_DB', JSON.stringify(db));
+    localStorage.setItem('CURRENT_TRIP_ID', currentTripId);
+}
+
+// 切換行程或初始化時載入資料
+function loadTripData() {
+    const trip = db[currentTripId];
+    document.getElementById('startDate').value = trip.start || "";
+    document.getElementById('endDate').value = trip.end || "";
+    document.getElementById('dayContent').innerHTML = "";
+    document.getElementById('dayTabs').innerHTML = "";
+    
+    if (trip.start && trip.end) {
+        initTrip(true); // 呼叫原本的生成天數邏輯，傳入 true 代表是靜默載入
+    } else {
+        document.getElementById('mainEditor').classList.add('hidden');
+    }
+}
+
+// --- 3. 計畫管理功能 ---
+// 更新下拉選單 UI
+function updateTripSelector() {
+    let header = document.querySelector('header .max-w-6xl');
+    let selectorWrap = document.getElementById('tripSelectorWrap');
+    
+    // 如果還沒有選單容器，動態創建一個在標題下方
+    if (!selectorWrap) {
+        selectorWrap = document.createElement('div');
+        selectorWrap.id = 'tripSelectorWrap';
+        selectorWrap.className = 'w-full mt-4 flex gap-2 items-center bg-black/10 p-2 rounded-lg';
+        selectorWrap.innerHTML = `
+            <span class="text-[10px] font-bold uppercase opacity-70 shrink-0">目前計畫:</span>
+            <select id="tripSelector" onchange="switchTrip(this.value)" class="bg-white text-slate-800 text-sm p-1 rounded w-full outline-none font-bold h-8"></select>
+            <button onclick="createNewTrip()" class="bg-white/20 text-white px-3 py-1 rounded text-xs font-bold whitespace-nowrap">+ 新計畫</button>
+        `;
+        header.appendChild(selectorWrap);
+    }
+
+    const sel = document.getElementById('tripSelector');
+    sel.innerHTML = "";
+    Object.keys(db).forEach(name => {
+        const opt = new Option(name, name);
+        opt.selected = (name === currentTripId);
+        sel.add(opt);
+    });
+}
+
+function createNewTrip() {
+    const name = prompt("請輸入新計畫的名稱 (例如: 2月日本行):");
+    if (!name || name.trim() === "") return;
+    if (db[name]) return alert("此名稱已存在");
+    
+    db[name] = { start: "", end: "", data: {} };
+    currentTripId = name;
+    save();
+    updateTripSelector();
+    loadTripData();
+}
+
+function switchTrip(name) {
+    currentTripId = name;
+    currentActiveDate = null;
+    save();
+    loadTripData();
+}
+
+// --- 4. 修改原有功能以支援儲存 ---
+
+function initTrip(isSilent = false) {
+    try {
+        const startStr = document.getElementById('startDate').value;
+        const endStr = document.getElementById('endDate').value;
+        
+        if (!startStr || !endStr) {
+            if (!isSilent) alert("⚠️ 錯誤：請先選擇日期！");
+            return;
+        }
+
+        // 更新資料庫中的日期
+        db[currentTripId].start = startStr;
+        db[currentTripId].end = endStr;
+        save();
+
+        const start = new Date(startStr);
+        const end = new Date(endStr);
+        const tabs = document.getElementById('dayTabs');
+        tabs.innerHTML = "<h3 class='font-bold text-gray-400 mb-4 px-2 uppercase text-[10px] tracking-widest'>Travel Days</h3>";
+
+        let curr = new Date(start);
+        let dayCount = 1;
+
+        while (curr <= end) {
+            const dateStr = curr.toISOString().split('T')[0];
+            // 確保資料結構存在
+            if (!db[currentTripId].data[dateStr]) db[currentTripId].data[dateStr] = [];
+            
+            const btn = document.createElement('button');
+            btn.className = "day-btn w-full text-left p-4 rounded-lg bg-white shadow-sm hover:border-brand border-2 border-transparent transition-all mb-2";
+            btn.innerHTML = `<div class='text-[10px] text-gray-400 font-bold'>DAY ${dayCount}</div><div class='font-bold text-gray-700 text-sm'>${dateStr}</div>`;
+            
+            (function(d, b) {
+                btn.onclick = function() {
+                    currentActiveDate = d;
+                    document.querySelectorAll('.day-btn').forEach(x => x.classList.remove('border-brand', 'bg-green-50'));
+                    b.classList.add('border-brand', 'bg-green-50');
+                    document.getElementById('currentDayTitle').innerText = `📅 ${d} 行程清單`;
+                    renderItems();
+                };
+            })(dateStr, btn);
+
+            tabs.appendChild(btn);
+            curr.setDate(curr.getDate() + 1);
+            dayCount++;
+        }
+        document.getElementById('mainEditor').classList.remove('hidden');
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function addItem() {
+    if (!currentActiveDate) return alert("請先在左邊選一個日期！");
+    const time = document.getElementById('itemTime').value;
+    const title = document.getElementById('itemTitle').value;
+    if (!time || !title) return alert("時間和地點是必填的！");
+
+    db[currentTripId].data[currentActiveDate].push({
+        id: Date.now(),
+        time: time,
+        type: document.getElementById('itemType').value,
+        title: title,
+        note: document.getElementById('itemNote').value
+    });
+    
+    db[currentTripId].data[currentActiveDate].sort((a, b) => a.time.localeCompare(b.time));
+    save(); // 儲存到本地
+    renderItems();
+    document.getElementById('itemTitle').value = "";
+    document.getElementById('itemNote').value = "";
+}
+
+function handlePressStart(id) {
+    pressTimer = setTimeout(() => {
+        if (confirm("📢 確定要刪除這筆行程嗎？")) {
+            db[currentTripId].data[currentActiveDate] = db[currentTripId].data[currentActiveDate].filter(i => i.id !== id);
+            save(); // 儲存到本地
+            renderItems();
+        }
+    }, 800);
+}
+
+function handlePressEnd() { clearTimeout(pressTimer); }
+
+function renderItems() {
+    const container = document.getElementById('dayContent');
+    container.innerHTML = "";
+    const items = db[currentTripId].data[currentActiveDate] || [];
+    if (items.length === 0) {
+        container.innerHTML = `<p class="text-center text-slate-300 py-20 text-sm italic tracking-widest">點擊上方「新增」規劃這天的行程</p>`;
+        return;
+    }
+    items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = "flex gap-6 relative items-start";
+        div.innerHTML = `
+            <div class="w-12 pt-1 text-sm font-black text-brand">${item.time}</div>
+            <div class="w-4 h-4 rounded-full bg-brand border-4 border-white shadow-sm mt-1.5 z-10"></div>
+            <div class="flex-1 bg-white border border-gray-100 p-4 rounded-lg shadow-sm -mt-2 event-card"
+                 onmousedown="handlePressStart(${item.id})" onmouseup="handlePressEnd()" ontouchstart="handlePressStart(${item.id})" ontouchend="handlePressEnd()">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-[9px] font-black px-2 py-0.5 rounded bg-brand text-white uppercase tracking-tighter">${item.type}</span>
+                    <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.title)}" target="_blank" class="text-blue-400 text-[10px] font-bold">🗺️ 導航</a>
+                </div>
+                <h4 class="font-bold text-base text-gray-800">${item.title}</h4>
+                <p class="text-xs text-gray-400 mt-1">${item.note || ''}</p>
+            </div>`;
+        container.appendChild(div);
+    });
+}
+    </script>
+</body>
+</html>
