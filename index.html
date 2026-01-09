@@ -36,8 +36,7 @@
     </header>
 
     <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-6 p-6">
-        <div id="dayTabs" class="space-y-2">
-            </div>
+        <div id="dayTabs" class="space-y-2"></div>
 
         <div class="md:col-span-3">
             <div id="mainEditor" class="hidden">
@@ -49,8 +48,13 @@
                     
                     <div class="grid grid-cols-1 md:grid-cols-6 gap-3 bg-gray-50 p-4 rounded-lg border border-gray-100 shadow-inner">
                         <div class="md:col-span-1"><label class="text-[10px] font-bold text-gray-400">時間</label><input type="time" id="itemTime" class="w-full p-2 border rounded text-sm"></div>
-                        <div class="md:col-span-1"><label class="text-[10px] font-bold text-gray-400">類型</label><select id="itemType" class="w-full p-2 border rounded text-sm"><option>景點</option><option>美食</option><option>交通</option><option>飯店</option></select></div>
-                        <div class="md:col-span-2"><label class="text-[10px] font-bold text-gray-400">地點</label><input type="text" id="itemTitle" placeholder="要去哪？" class="w-full p-2 border rounded text-sm"></div>
+                        <div class="md:col-span-1">
+                            <label class="text-[10px] font-bold text-gray-400">類型</label>
+                            <select id="itemType" class="w-full p-2 border rounded text-sm">
+                                <option>景點</option><option>美食</option><option>交通</option><option>飯店</option><option>行程</option><option>辦理</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2"><label class="text-[10px] font-bold text-gray-400">地點 (選填)</label><input type="text" id="itemTitle" placeholder="要去哪？" class="w-full p-2 border rounded text-sm"></div>
                         <div class="md:col-span-2"><label class="text-[10px] font-bold text-gray-400">備註</label><div class="flex gap-2"><input type="text" id="itemNote" placeholder="選填" class="w-full p-2 border rounded text-sm"><button onclick="addItem()" class="bg-brand text-white px-4 py-2 rounded font-bold text-sm shadow-md">新增</button></div></div>
                     </div>
                 </div>
@@ -64,32 +68,26 @@
     </div>
 
     <script>
-      // --- 1. 資料結構與初始化 ---
-// db 格式：{ "計畫名稱": { start: "", end: "", data: { "日期": [] } } }
 let db = JSON.parse(localStorage.getItem('TRAVEL_MASTER_DB')) || {};
 let currentTripId = localStorage.getItem('CURRENT_TRIP_ID') || "";
 let currentActiveDate = null;
 let pressTimer;
 
-// 自動初始化：如果完全沒資料，幫用戶建一個預設的
 if (Object.keys(db).length === 0) {
     db["預設行程"] = { start: "", end: "", data: {} };
     currentTripId = "預設行程";
 }
 
-// 頁面載入後立即執行 UI 更新
 window.onload = function() {
     updateTripSelector();
     loadTripData();
 };
 
-// --- 2. 儲存與讀取 ---
 function save() {
     localStorage.setItem('TRAVEL_MASTER_DB', JSON.stringify(db));
     localStorage.setItem('CURRENT_TRIP_ID', currentTripId);
 }
 
-// 切換行程或初始化時載入資料
 function loadTripData() {
     const trip = db[currentTripId];
     document.getElementById('startDate').value = trip.start || "";
@@ -98,19 +96,16 @@ function loadTripData() {
     document.getElementById('dayTabs').innerHTML = "";
     
     if (trip.start && trip.end) {
-        initTrip(true); // 呼叫原本的生成天數邏輯，傳入 true 代表是靜默載入
+        initTrip(true);
     } else {
         document.getElementById('mainEditor').classList.add('hidden');
     }
 }
 
-// --- 3. 計畫管理功能 ---
-// 更新下拉選單 UI
 function updateTripSelector() {
     let header = document.querySelector('header .max-w-6xl');
     let selectorWrap = document.getElementById('tripSelectorWrap');
     
-    // 如果還沒有選單容器，動態創建一個在標題下方
     if (!selectorWrap) {
         selectorWrap = document.createElement('div');
         selectorWrap.id = 'tripSelectorWrap';
@@ -151,8 +146,6 @@ function switchTrip(name) {
     loadTripData();
 }
 
-// --- 4. 修改原有功能以支援儲存 ---
-
 function initTrip(isSilent = false) {
     try {
         const startStr = document.getElementById('startDate').value;
@@ -163,7 +156,6 @@ function initTrip(isSilent = false) {
             return;
         }
 
-        // 更新資料庫中的日期
         db[currentTripId].start = startStr;
         db[currentTripId].end = endStr;
         save();
@@ -178,7 +170,6 @@ function initTrip(isSilent = false) {
 
         while (curr <= end) {
             const dateStr = curr.toISOString().split('T')[0];
-            // 確保資料結構存在
             if (!db[currentTripId].data[dateStr]) db[currentTripId].data[dateStr] = [];
             
             const btn = document.createElement('button');
@@ -209,18 +200,18 @@ function addItem() {
     if (!currentActiveDate) return alert("請先在左邊選一個日期！");
     const time = document.getElementById('itemTime').value;
     const title = document.getElementById('itemTitle').value;
-    if (!time || !title) return alert("時間和地點是必填的！");
+    if (!time) return alert("請填寫時間！");
 
     db[currentTripId].data[currentActiveDate].push({
         id: Date.now(),
         time: time,
         type: document.getElementById('itemType').value,
-        title: title,
+        title: title.trim(),
         note: document.getElementById('itemNote').value
     });
     
     db[currentTripId].data[currentActiveDate].sort((a, b) => a.time.localeCompare(b.time));
-    save(); // 儲存到本地
+    save(); 
     renderItems();
     document.getElementById('itemTitle').value = "";
     document.getElementById('itemNote').value = "";
@@ -230,7 +221,7 @@ function handlePressStart(id) {
     pressTimer = setTimeout(() => {
         if (confirm("📢 確定要刪除這筆行程嗎？")) {
             db[currentTripId].data[currentActiveDate] = db[currentTripId].data[currentActiveDate].filter(i => i.id !== id);
-            save(); // 儲存到本地
+            save(); 
             renderItems();
         }
     }, 800);
@@ -249,6 +240,12 @@ function renderItems() {
     items.forEach(item => {
         const div = document.createElement('div');
         div.className = "flex gap-6 relative items-start";
+        
+        const hasTitle = item.title && item.title.trim() !== "";
+        const mapLink = hasTitle ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.title)}" target="_blank" class="text-blue-400 text-[10px] font-bold">🗺️ 導航</a>` : "";
+        const displayTitle = hasTitle ? item.title : `[${item.type}]`;
+        const titleClass = hasTitle ? "text-gray-800" : "text-gray-400 italic";
+
         div.innerHTML = `
             <div class="w-12 pt-1 text-sm font-black text-brand">${item.time}</div>
             <div class="w-4 h-4 rounded-full bg-brand border-4 border-white shadow-sm mt-1.5 z-10"></div>
@@ -256,9 +253,9 @@ function renderItems() {
                  onmousedown="handlePressStart(${item.id})" onmouseup="handlePressEnd()" ontouchstart="handlePressStart(${item.id})" ontouchend="handlePressEnd()">
                 <div class="flex justify-between items-center mb-1">
                     <span class="text-[9px] font-black px-2 py-0.5 rounded bg-brand text-white uppercase tracking-tighter">${item.type}</span>
-                    <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.title)}" target="_blank" class="text-blue-400 text-[10px] font-bold">🗺️ 導航</a>
+                    ${mapLink}
                 </div>
-                <h4 class="font-bold text-base text-gray-800">${item.title}</h4>
+                <h4 class="font-bold text-base ${titleClass}">${displayTitle}</h4>
                 <p class="text-xs text-gray-400 mt-1">${item.note || ''}</p>
             </div>`;
         container.appendChild(div);
@@ -266,5 +263,4 @@ function renderItems() {
 }
     </script>
 </body>
-
 </html>
