@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>僑熺的旅遊規劃</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         :root { --brand-green: #82ba8d; }
         .bg-brand { background-color: var(--brand-green); }
@@ -13,11 +14,15 @@
         .timeline-path { position: absolute; left: 23px; top: 0; bottom: 0; width: 2px; background: #e2e8f0; z-index: 0; }
         .event-card { transition: all 0.2s; cursor: pointer; user-select: none; }
         .event-card:active { transform: scale(0.98); background-color: #f0f7f1; }
+        /* PDF 匯出時隱藏特定元素 */
+        @media print {
+            .no-print { display: none !important; }
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-slate-800">
 
-    <header class="bg-brand text-white p-6 shadow-xl">
+    <header class="bg-brand text-white p-6 shadow-xl no-print">
         <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
             <h1 class="text-2xl font-bold tracking-wider">🌿 TRAVEL PLANNER</h1>
             <div class="flex gap-2 items-end">
@@ -30,17 +35,18 @@
                     <input type="date" id="endDate" class="text-slate-900 p-1 rounded border-none shadow-inner text-sm outline-none">
                 </div>
                 <button onclick="initTrip()" class="bg-white text-brand px-4 py-1.5 rounded font-bold hover:bg-gray-100 transition shadow-md text-sm">生成天數</button>
+                <button onclick="exportToPDF()" class="bg-blue-500 text-white px-4 py-1.5 rounded font-bold hover:bg-blue-600 transition shadow-md text-sm">匯出 PDF</button>
                 <button onclick="localStorage.clear(); location.reload();" class="bg-red-500 text-white px-2 py-1.5 rounded text-[10px] hover:bg-red-600 transition">重置數據</button>
             </div>
         </div>
     </header>
 
-    <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-6 p-6">
-        <div id="dayTabs" class="space-y-2"></div>
+    <div id="pdf-content" class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-6 p-6">
+        <div id="dayTabs" class="space-y-2 no-print"></div>
 
         <div class="md:col-span-3">
             <div id="mainEditor" class="hidden">
-                <div class="bg-white p-6 rounded-xl shadow-sm mb-6 border-t-4 border-brand">
+                <div id="input-area" class="bg-white p-6 rounded-xl shadow-sm mb-6 border-t-4 border-brand no-print">
                     <div class="flex justify-between items-center mb-4">
                         <h2 id="currentDayTitle" class="text-xl font-bold text-gray-700">請選取日期</h2>
                         <span class="text-[10px] text-brand bg-green-50 px-2 py-1 rounded font-bold border border-green-100 italic">長按卡片刪除行程</span>
@@ -60,6 +66,10 @@
                 </div>
 
                 <div class="relative min-h-[400px] bg-white rounded-xl shadow-sm p-8">
+                    <div id="pdf-header" class="hidden text-center mb-6">
+                        <h1 class="text-2xl font-bold text-brand">🌿 旅遊行程表</h1>
+                        <p id="pdf-trip-name" class="text-gray-500"></p>
+                    </div>
                     <div class="timeline-path"></div>
                     <div id="dayContent" class="space-y-8 relative z-10"></div>
                 </div>
@@ -109,9 +119,9 @@ function updateTripSelector() {
     if (!selectorWrap) {
         selectorWrap = document.createElement('div');
         selectorWrap.id = 'tripSelectorWrap';
-        selectorWrap.className = 'w-full mt-4 flex gap-2 items-center bg-black/10 p-2 rounded-lg';
+        selectorWrap.className = 'w-full mt-4 flex gap-2 items-center bg-black/10 p-2 rounded-lg no-print';
         selectorWrap.innerHTML = `
-            <span class="text-[10px] font-bold uppercase opacity-70 shrink-0">目前計畫:</span>
+            <span class="text-[10px] font-bold uppercase opacity-70 shrink-0 text-white">目前計畫:</span>
             <select id="tripSelector" onchange="switchTrip(this.value)" class="bg-white text-slate-800 text-sm p-1 rounded w-full outline-none font-bold h-8"></select>
             <button onclick="createNewTrip()" class="bg-white/20 text-white px-3 py-1 rounded text-xs font-bold whitespace-nowrap">+ 新計畫</button>
         `;
@@ -213,6 +223,7 @@ function addItem() {
     db[currentTripId].data[currentActiveDate].sort((a, b) => a.time.localeCompare(b.time));
     save(); 
     renderItems();
+    document.getElementById('itemTime').value = ""; // 清除時間
     document.getElementById('itemTitle').value = "";
     document.getElementById('itemNote').value = "";
 }
@@ -242,7 +253,7 @@ function renderItems() {
         div.className = "flex gap-6 relative items-start";
         
         const hasTitle = item.title && item.title.trim() !== "";
-        const mapLink = hasTitle ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.title)}" target="_blank" class="text-blue-400 text-[10px] font-bold">🗺️ 導航</a>` : "";
+        const mapLink = hasTitle ? `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.title)}" target="_blank" class="text-blue-400 text-[10px] font-bold no-print">🗺️ 導航</a>` : "";
         const displayTitle = hasTitle ? item.title : `[${item.type}]`;
         const titleClass = hasTitle ? "text-gray-800" : "text-gray-400 italic";
 
@@ -259,6 +270,33 @@ function renderItems() {
                 <p class="text-xs text-gray-400 mt-1">${item.note || ''}</p>
             </div>`;
         container.appendChild(div);
+    });
+}
+
+// PDF 匯出函式
+function exportToPDF() {
+    if (!currentActiveDate) return alert("請先選擇一個日期來匯出行程！");
+    
+    const element = document.getElementById('pdf-content');
+    const tripHeader = document.getElementById('pdf-header');
+    const tripNameDisplay = document.getElementById('pdf-trip-name');
+    
+    // 匯出前的視覺處理
+    tripHeader.classList.remove('hidden');
+    tripNameDisplay.innerText = `${currentTripId} - ${currentActiveDate}`;
+
+    const opt = {
+        margin: 10,
+        filename: `行程計畫_${currentTripId}_${currentActiveDate}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    // 執行匯出
+    html2pdf().set(opt).from(element).save().then(() => {
+        // 匯出後的還原處理
+        tripHeader.classList.add('hidden');
     });
 }
     </script>
